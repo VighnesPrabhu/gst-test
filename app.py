@@ -35,7 +35,15 @@ if "file_bytes" in st.session_state and st.session_state["file_bytes"] is not No
 invoice_no = st.text_input("Invoice Number (Cell G6)", value=inv_no_default)
 invoice_date = st.text_input("Invoice Date (Cell G7)", value=inv_date_default)
 rental_text = st.text_area("Rental Description & Month (Cell C17)", value=rental_default)
-output_filename = st.text_input("Output File Name", value="Invoice")
+
+# Automatically generate a smart default file name using invoice number and date
+safe_inv = invoice_no.replace("/", "-").replace("\\", "-").strip() if invoice_no else "Invoice"
+safe_date = invoice_date.replace("/", "-").replace("\\", "-").strip() if invoice_date else ""
+default_filename = f"Invoice_{safe_inv}"
+if safe_date:
+    default_filename += f"_{safe_date}"
+
+output_filename = st.text_input("Output File Name", value=default_filename)
 
 if st.button("🔄 Generate Files", type="primary"):
     if "file_bytes" not in st.session_state or st.session_state["file_bytes"] is None:
