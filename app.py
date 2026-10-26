@@ -5,34 +5,26 @@ import tempfile
 import os
 import io
 
-st.set_page_config(page_title="GST Invoice Modifier & Converter", page_icon="📄", layout="centered")
+st.set_page_config(page_title="GST Invoice Modifier", page_icon="📄", layout="centered")
 
 st.title("📄 GST Invoice Modifier & Converter")
 st.write("Upload your Excel template, update details, and download as Excel or PDF!")
 
-# Initialize session state variables
-if "file_bytes" not in st.session_state:
-    st.session_state.file_bytes = None
-if "xlsx_data" not in st.session_state:
-    st.session_state.xlsx_data = None
-if "pdf_data" not in st.session_state:
-    st.session_state.pdf_data = None
-if "output_filename" not in st.session_state:
-    st.session_state.output_filename = "Invoice"
-
+# File uploader
 uploaded_file = st.file_uploader("Upload Excel Invoice (.xlsx)", type=["xlsx"])
 
+# Store uploaded file bytes safely in session state
 if uploaded_file is not None:
-    # Use getvalue() to safely capture bytes without closing the stream pointer
-    st.session_state.file_bytes = uploaded_file.getvalue()
+    st.session_state["file_bytes"] = uploaded_file.getvalue()
 
+# Extract default values from cells if file bytes exist
 inv_no_default = ""
 inv_date_default = ""
 rental_default = ""
 
-if st.session_state.file_bytes is not None:
+if "file_bytes" in st.session_state and st.session_state["file_bytes"] is not None:
     try:
-        wb_temp = openpyxl.load_workbook(io.BytesIO(st.session_state.file_bytes), data_only=True)
+        wb_temp = openpyxl.load_workbook(io.BytesIO(st.session_state["file_bytes"]), data_only=True)
         sheet_temp = wb_temp.active
         inv_no_default = str(sheet_temp['G6'].value or "")
         inv_date_default = str(sheet_temp['G7'].value or "")
@@ -46,10 +38,14 @@ rental_text = st.text_area("Rental Description & Month (Cell C17)", value=rental
 output_filename = st.text_input("Output File Name", value="Invoice")
 
 if st.button("🔄 Generate Files", type="primary"):
-    if st.session_state.file_bytes is not None and invoice_no and invoice_date and rental_text:
+    if "file_bytes" not in st.session_state or st.session_state["file_bytes"] is None:
+        st.warning("Please upload an Excel file first.")
+    elif not invoice_no or not invoice_date or not rental_text:
+        st.warning("Please fill in all required fields.")
+    else:
         try:
-            # 1. Handle Excel generation using safe memory buffer
-            wb = openpyxl.load_workbook(io.BytesIO(st.session_state.file_bytes))
+            # 1. Generate modified Excel in memory
+            wb = openpyxl.load_workbook(io.BytesIO(st.session_state["file_bytes"]))
             sheet = wb.active
             sheet['G6'] = invoice_no
             sheet['G7'] = invoice_date
@@ -58,11 +54,11 @@ if st.button("🔄 Generate Files", type="primary"):
             excel_buffer = io.BytesIO()
             wb.save(excel_buffer)
             excel_buffer.seek(0)
-            st.session_state.xlsx_data = excel_buffer.getvalue()
+            st.session_state["xlsx_data"] = excel_buffer.getvalue()
 
-            # 2. Handle PDF generation using temp directory & LibreOffice
+            # 2. Convert Excel to PDF using LibreOffice in a temporary directory
             with tempfile.TemporaryDirectory() as tmpdir:
-                xlsx_path = os.path.join(tmpdir, "input.xlsx")
+                xlsx_path = os.path.join(tmpdir, "invoice.xlsx")
                 wb.save(xlsx_path)
 
                 result = subprocess.run(
@@ -74,60 +70,47 @@ if st.button("🔄 Generate Files", type="primary"):
                 )
 
                 if result.returncode != 0:
-                    st.error(f"LibreOffice Error Output:\n{result.stderr}")
-                    st.session_state.pdf_data = None
+                    st.error(f"LibreOffice Conversion Error:\n{result.stderr}")
+                    st.session_state["pdf_data"] = None
                 else:
-                    pdf_path = os.path.join(tmpdir, "input.pdf")
+                    pdf_path = os.path.join(tmpdir, "invoice.pdf")
                     if os.path.exists(pdf_path):
-                        with open(pdf_path, "rb") as pdf_file:
-                            st.session_state.pdf_data = pdf_file.read()
+                        with open(pdf_path, "rb") as f:
+                            st.session_state["pdf_data"] = f.read()
                     else:
-                        st.session_state.pdf_data = None
+                        st.session_state["pdf_data"] = None
 
-            filename = output_filename.strip()
-            if not filename:
-                filename = "Invoice"
-            st.session_state.output_filename = filename
+            st.session_state["filename_prefix"] = output_filename.strip() or "Invoice"
+            st.success("Files generated successfully!")
 
-            if st.session_state.xlsx_data is not None and st.session_state.pdf_data is not None:
-                st.success("Files generated successfully!")
-            elif st.session_state.xlsx_data is not None:
-                st.warning("Excel generated, but PDF conversion encountered an issue.")
         except Exception as e:
             st.error(f"Error processing file: {e}")
-            st.session_state.xlsx_data = None
-            st.session_state.pdf_data = None
-    else:
-        st.warning("Please upload a file and fill in all required fields.")
 
-# Display download buttons side by side if data exists in memory
-if st.session_state.xlsx_data is not None or st.session_state.pdf_data is not None:
+# Display download buttons side by side if data exists in session state
+if "xlsx_data" in st.session_state and st.session_state["xlsx_data"] is not None:
     st.markdown("---")
     st.subheader("📥 Download Your Files")
+    
+    prefix = st.session_state.get("filename_prefix", "Invoice")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.session_state.xlsx_data is not None:
-            xlsx_name = st.session_state.output_filename
-            if not xlsx_name.endswith('.xlsx'):
-                xlsx_name += '.xlsx'
-            st.download_button(
-                label="📥 Download Excel (.xlsx)",
-                data=st.session_state.xlsx_data,
-                file_name=xlsx_name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
+        xlsx_name = prefix if prefix.endswith('.xlsx') else prefix + '.xlsx'
+        st.download_button(
+            label="📥 Download Excel (.xlsx)",
+            data=st.session_state["xlsx_data"],
+            file_name=xlsx_name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
             
     with col2:
-        if st.session_state.pdf_data is not None:
-            pdf_name = st.session_state.output_filename
-            if not pdf_name.endswith('.pdf'):
-                pdf_name += '.pdf'
+        if "pdf_data" in st.session_state and st.session_state["pdf_data"] is not None:
+            pdf_name = prefix if prefix.endswith('.pdf') else prefix + '.pdf'
             st.download_button(
                 label="📥 Download PDF (.pdf)",
-                data=st.session_state.pdf_data,
+                data=st.session_state["pdf_data"],
                 file_name=pdf_name,
                 mime="application/pdf",
                 use_container_width=True
