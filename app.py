@@ -44,23 +44,23 @@ if st.button("🔄 Generate Files", type="primary"):
         st.warning("Please fill in all required fields.")
     else:
         try:
-            # 1. Generate modified Excel in memory
+            # Load workbook and update cells
             wb = openpyxl.load_workbook(io.BytesIO(st.session_state["file_bytes"]))
             sheet = wb.active
             sheet['G6'] = invoice_no
             sheet['G7'] = invoice_date
             sheet['C17'] = rental_text
             
-            excel_buffer = io.BytesIO()
-            wb.save(excel_buffer)
-            excel_buffer.seek(0)
-            st.session_state["xlsx_data"] = excel_buffer.getvalue()
-
-            # 2. Convert Excel to PDF using LibreOffice in a temporary directory
+            # Use temporary directory to handle both Excel and PDF safely
             with tempfile.TemporaryDirectory() as tmpdir:
                 xlsx_path = os.path.join(tmpdir, "invoice.xlsx")
                 wb.save(xlsx_path)
 
+                # Read Excel bytes safely from the temp file
+                with open(xlsx_path, "rb") as f:
+                    st.session_state["xlsx_data"] = f.read()
+
+                # Convert Excel to PDF using LibreOffice
                 result = subprocess.run(
                     ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmpdir, xlsx_path],
                     stdout=subprocess.PIPE,
