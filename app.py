@@ -1,15 +1,16 @@
 import streamlit as st
 import openpyxl
-import io
+import subprocess
+import tempfile
+import os
 
-st.set_page_config(page_title="GST Invoice Modifier", page_icon="📄", layout="centered")
+st.set_page_config(page_title="GST Invoice PDF Converter", page_icon="📄", layout="centered")
 
-st.title("📄 GST Invoice Modifier")
-st.write("Upload your Excel template, update details, and download instantly!")
+st.title("📄 GST Invoice to PDF Generator")
+st.write("Upload your Excel template, update details, and download as a clean PDF!")
 
 uploaded_file = st.file_uploader("Upload Excel Invoice (.xlsx)", type=["xlsx"])
 
-# Extract existing values from cells G6, G7, and C17 if a file is uploaded
 inv_no_default = ""
 inv_date_default = ""
 rental_default = ""
@@ -24,41 +25,57 @@ if uploaded_file is not None:
     except Exception:
         pass
 
-# Input fields pre-filled with values from the Excel file
 invoice_no = st.text_input("Invoice Number (Cell G6)", value=inv_no_default)
 invoice_date = st.text_input("Invoice Date (Cell G7)", value=inv_date_default)
 rental_text = st.text_area("Rental Description & Month (Cell C17)", value=rental_default)
 output_filename = st.text_input("Output File Name", value="Invoice")
 
-if st.button("🔄 Update & Download Excel", type="primary"):
+if st.button("🔄 Generate & Download PDF", type="primary"):
     if uploaded_file is not None and invoice_no and invoice_date and rental_text:
         try:
-            # Reload workbook for modification
-            uploaded_file.seek(0)
-            wb = openpyxl.load_workbook(uploaded_file)
-            sheet = wb.active
+            with tempfile.TemporaryDirectory() as tmpdir:
+                xlsx_path = os.path.join(tmpdir, "input.xlsx")
+                
+                # Save uploaded file to temp path
+                uploaded_file.seek(0)
+                with open(xlsx_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
 
-            # Update specific target cells
-            sheet['G6'] = invoice_no
-            sheet['G7'] = invoice_date
-            sheet['C17'] = rental_text
+                # Modify workbook with openpyxl
+                wb = openpyxl.load_workbook(xlsx_path)
+                sheet = wb.active
+                sheet['G6'] = invoice_no
+                sheet['G7'] = invoice_date
+                sheet['C17'] = rental_text
+                wb.save(xlsx_path)
 
-            output_buffer = io.BytesIO()
-            wb.save(output_buffer)
-            output_buffer.seek(0)
+                # Convert Excel to PDF using LibreOffice headless
+                subprocess.run(
+                    ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmpdir, xlsx_path],
+                    check=True,
+                    timeout=60
+                )
 
-            filename = output_filename.strip()
-            if not filename.endswith('.xlsx'):
-                filename += '.xlsx'
+                pdf_path = os.path.join(tmpdir, "input.pdf")
 
-            st.success("Excel file updated successfully!")
-            
-            st.download_button(
-                label="📥 Download Modified Excel",
-                data=output_buffer,
-                file_name=filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+                if os.path.exists(pdf_path):
+                    with open(pdf_path, "rb") as pdf_file:
+                        pdf_bytes = pdf_file.read()
+
+                    filename = output_filename.strip()
+                    if not filename.endswith('.pdf'):
+                        filename += '.pdf'
+
+                    st.success("PDF generated successfully!")
+                    
+                    st.download_button(
+                        label="📥 Download Modified PDF",
+                        data=pdf_bytes,
+                        file_name=filename,
+                        mime="application/pdf"
+                    )
+                else:
+                    st.error("Failed to generate PDF conversion.")
         except Exception as e:
             st.error(f"Error processing file: {e}")
     else:
