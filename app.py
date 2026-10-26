@@ -24,9 +24,12 @@ inv_no_default = ""
 inv_date_default = ""
 rental_default = ""
 
+file_bytes = None
 if uploaded_file is not None:
+    # Read file bytes into memory safely so the stream never closes prematurely
+    file_bytes = uploaded_file.read()
     try:
-        wb_temp = openpyxl.load_workbook(uploaded_file, data_only=True)
+        wb_temp = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
         sheet_temp = wb_temp.active
         inv_no_default = str(sheet_temp['G6'].value or "")
         inv_date_default = str(sheet_temp['G7'].value or "")
@@ -40,11 +43,10 @@ rental_text = st.text_area("Rental Description & Month (Cell C17)", value=rental
 output_filename = st.text_input("Output File Name", value="Invoice")
 
 if st.button("🔄 Generate Files", type="primary"):
-    if uploaded_file is not None and invoice_no and invoice_date and rental_text:
+    if file_bytes is not None and invoice_no and invoice_date and rental_text:
         try:
-            # 1. Handle Excel generation
-            uploaded_file.seek(0)
-            wb = openpyxl.load_workbook(uploaded_file)
+            # 1. Handle Excel generation using safe memory buffer
+            wb = openpyxl.load_workbook(io.BytesIO(file_bytes))
             sheet = wb.active
             sheet['G6'] = invoice_no
             sheet['G7'] = invoice_date
