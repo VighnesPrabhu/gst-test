@@ -13,9 +13,10 @@ st.write("Upload your Excel template, update details, and download as Excel or P
 # File uploader
 uploaded_file = st.file_uploader("Upload Excel Invoice (.xlsx)", type=["xlsx"])
 
-# Store uploaded file bytes safely in session state
+# Store uploaded file bytes and original filename safely in session state
 if uploaded_file is not None:
     st.session_state["file_bytes"] = uploaded_file.getvalue()
+    st.session_state["original_filename"] = os.path.splitext(uploaded_file.name)[0]
 
 # Extract default values from cells if file bytes exist
 inv_no_default = ""
@@ -36,10 +37,14 @@ invoice_no = st.text_input("Invoice Number (Cell G6)", value=inv_no_default)
 invoice_date = st.text_input("Invoice Date (Cell G7)", value=inv_date_default)
 rental_text = st.text_area("Rental Description & Month (Cell C17)", value=rental_default)
 
-# Automatically generate a smart default file name using invoice number and date
-safe_inv = invoice_no.replace("/", "-").replace("\\", "-").strip() if invoice_no else "Invoice"
+# Automatically generate a smart default file name combining original file name, invoice number, and date
+orig_name = st.session_state.get("original_filename", "Invoice")
+safe_inv = invoice_no.replace("/", "-").replace("\\", "-").strip() if invoice_no else ""
 safe_date = invoice_date.replace("/", "-").replace("\\", "-").strip() if invoice_date else ""
-default_filename = f"Invoice_{safe_inv}"
+
+default_filename = orig_name
+if safe_inv:
+    default_filename += f"_{safe_inv}"
 if safe_date:
     default_filename += f"_{safe_date}"
 
@@ -100,11 +105,14 @@ if "xlsx_data" in st.session_state and st.session_state["xlsx_data"] is not None
     st.subheader("📥 Download Your Files")
     
     prefix = st.session_state.get("filename_prefix", "Invoice")
+    xlsx_name = prefix if prefix.endswith('.xlsx') else prefix + '.xlsx'
+    pdf_name = prefix if prefix.endswith('.pdf') else prefix + '.pdf'
+    
+    st.info(f"📁 **Current File Name:** `{prefix}` (.xlsx / .pdf)")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        xlsx_name = prefix if prefix.endswith('.xlsx') else prefix + '.xlsx'
         st.download_button(
             label="📥 Download Excel (.xlsx)",
             data=st.session_state["xlsx_data"],
@@ -115,7 +123,6 @@ if "xlsx_data" in st.session_state and st.session_state["xlsx_data"] is not None
             
     with col2:
         if "pdf_data" in st.session_state and st.session_state["pdf_data"] is not None:
-            pdf_name = prefix if prefix.endswith('.pdf') else prefix + '.pdf'
             st.download_button(
                 label="📥 Download PDF (.pdf)",
                 data=st.session_state["pdf_data"],
